@@ -1,0 +1,20 @@
+{
+    "notice": "pin numbers are the gpio numbers, not by the location on the header",
+    "port": 40000,
+    "leds": {
+        "led1": {
+            "pin": 22
+        },
+        "led2": {
+            "pin": 23
+        },
+        "led3": {
+            "pin": 24
+        }
+    },
+    "buttons":  {
+        "button1": {
+            "pin":17
+        }
+    }
+}

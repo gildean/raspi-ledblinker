@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, maximum-scale=1, user-scalable=no">
+        <title>LEDBLINKER</title>
+        <style>
+            @font-face { font-family: 'Lato'; font-style: normal; font-weight: 300; src: local('Lato Light'), local('Lato-Light'), url(http://themes.googleusercontent.com/static/fonts/lato/v6/KT3KS9Aol4WfR6Vas8kNcg.woff) format('woff'); }
+            body { font: 130% 'Lato', sans-serif; color:#34495e; background: #ecf0f1; text-shadow: -1px 1px 1px rgba(0,0,0,0.3); }
+            #main { width: 90%; margin: 4.5em auto 0;}
+            input { text-align: center; width: 15%; padding: 1% 0.5%; font-size: 120%; margin: 1% 2% 1% 1%; color: #666;}
+            button { font-family: 'Lato'; width: 16%; font-size: 1.5em; letter-spacing: 0.2em; margin: 0; padding: 2% 0; color: #ecf0f1; border: 0; text-shadow: 0px 1px 1px rgba(0,0,0,0.5); transition: all 0.3s linear;}
+            button:nth-of-type(odd) { margin: 0 0 0 15% }
+            button:hover { cursor: pointer; }
+            label { width: 15%; font-size: 120%; padding: 0 0 0 1% }
+            #status { position: absolute; bottom: 0.2em; right: 0.4em; color: #aaa; font-size: 0.9em }
+            .ledheader { display: inline-block; width: 10%; font-weight: 300 }
+            .clicks { word-spacing: 0.4em ;position: absolute; top: 1.5em; right: 0.5em; font-size: 2em; color: #aaa }
+            #buttonpresses { position: absolute; top: 0.2em; right: 0.5em; height: 1.2em; font-size: 1.2em; transition: opacity 0.5s ease-in-out; display: block; }
+            .buttonpress { color: #34495e; letter-spacing: 0.1em }
+            .desc { display: inline-block; width: 19%; text-align: center; }
+            .desc:first-of-type { margin: 0 1% 0 0 }
+            .dline { margin: 0 0 0 10% }
+            .led { margin:0; padding: 2% 0; border-bottom: 1px solid #ccc }
+            .led:first-of-type { padding: 0 0 2% }
+            .led:last-of-type { border: 0; padding: 2% 0 0 }
+            #topic { font-weight: 300; position: absolute; top: 0; left: 0.2em; margin: 0; padding: 0; letter-spacing: 0.4em }
+        </style>
+    </head>
+    <body>
+        <div id="main">
+            <h1 id="topic">LEDBLINKER</h1>
+            <h3 class="ledheader">count</h3>
+            <input name="count" id="count" type="number" value="100" required />
+            <p class="dline"><span class="desc">on<small> (ms)</small></span><span class="desc">off<small> (ms)</small></span></p>
+        </div>
+        <span id="status"></span>
+        <span id="buttonpresses"></span>
+        <div id="clicks" class="clicks">
+        </div>
+        <script>
+            (function (D, window, undefined) {
+                'use strict';
+                var setLeds = false;
+                var setButtons = false;
+                var leds = {};
+                var ledbuttons = {};
+                var clickButtons = {};
+                var main = D.getElementById('main')
+                var status = D.getElementById('status');
+                var count = D.getElementById('count');
+                var clicks = D.getElementById('clicks');
+                var buttonC = D.getElementById('button');
+                var buttonpresses = D.getElementById('buttonpresses');
+
+                function isValidJson(json) {
+                    try {
+                        return JSON.parse(json);
+                    } catch (e) {
+                        return false;
+                    }
+                }
+
+                function addElement(parent, type, classN, id, texts) {
+                    var el = D.createElement(type);
+                    el.className = classN;
+                    el.id = id;
+                    el.appendChild(D.createTextNode(texts));
+                    parent.appendChild(el);
+                    return el;
+                }
+
+                function setNewButtons(data) {
+                    setButtons = true;
+                    Object.keys(data).forEach(function (button) {
+                        var counter = addElement(clicks, 'span', 'clicker', button + 'click', button + ': ');
+                        var numb = addElement(counter, 'span', 'buttonpress', button, data[button].clicks);
+                        addElement(counter, 'small', 'nclicks', button + 'number', ' clicks');
+                        clickButtons[button] = numb;
+                    });
+                }
+
+                function setNewLeds(data) {
+                    setLeds = true;
+                    Object.keys(data).forEach(function (id) {
+                        var stat = data[id].status;
+                        var statv = data[id].value;
+                        var onoffstat = (statv === 1) ? 'off' : 'on';
+                        var blinkstat = (stat !== 'blinking') ? (stat !== 'stop') ? 'blink' : 'blink' : 'stop'; 
+                        var p = addElement(main, 'p', 'led', id + 'p', '');
+                        var lhead = addElement(p, 'h3', 'ledheader', id + 'h3', id);
+                        var onled = addElement(p, 'input', 'timer', id + 'on', '');
+                        var offled = addElement(p, 'input', 'timer', id + 'off', '');
+                        var ledswitch = addElement(p, 'button', 'button', id + 'b', onoffstat);
+                        var ledblink = addElement(p, 'button', 'button', id + 'blink', blinkstat);
+                        ledswitch.style.background = (onoffstat === 'on') ? '#27ae60' : '#2ecc71';
+                        ledblink.style.background = (blinkstat === 'blink') ? '#1abc9c' : '#16a085';
+                        onled.type = 'number';
+                        offled.type = 'number';
+                        onled.value = 100;
+                        offled.value = 100;
+                        leds[id] =  {
+                            on: onled,
+                            off: offled
+                        };
+                        ledbuttons[id] = {
+                            switch: ledswitch,
+                            blink: ledblink
+                        };
+                        ledbuttons[id].switch.onclick = onoffclick;
+                        ledbuttons[id].blink.onclick = blinkclick;
+                    });
+                }
+
+                function blinkclick(event) {
+                    var name = event.target.id.replace('blink', '');
+                    if (event.target.innerText !== 'stop') {
+                        var obj = {
+                            led: name,
+                            on: leds[name].on.value,
+                            off: leds[name].off.value,
+                            count: count.value
+                        };
+                        webSocketConnection.send(JSON.stringify(obj));
+                    } else {
+                        webSocketConnection.send(JSON.stringify({ led: name, stop: 1 }));
+                    }
+                }
+
+                function onoffclick(event) {
+                    webSocketConnection.send(JSON.stringify({ led: event.target.id.replace('b', ''), value: (event.target.innerText === 'on') ? 1 : 0 }));
+                }
+
+                var webSocketConnection = Object.create({
+                    init: function () {
+                        var self = this;
+                        this.connection = new WebSocket(window.location.href.replace('http', 'ws'));
+
+                        this.connection.onopen = function () {
+                            status.innerText = 'WebSocket: connected';
+                        };
+
+                        this.connection.onerror = function (error) {
+                            console.log(error);
+                            self.connection.close();
+                        };
+
+                        this.connection.onclose = function () {
+                            status.innerText = 'WebSocket: disconnected';
+                            setTimeout(self.init, 1000);
+                        };
+
+                        this.connection.onmessage = function (message) {
+                            var json = isValidJson(message.data);
+                            if (json) {
+                                if (!setLeds && json.type === 'leds') {
+                                    return setNewLeds(json.data);
+                                } else if (!setButtons && json.type === 'buttons') {
+                                    return setNewButtons(json.data);
+                                }
+                                 if (json.type === 'leds') {
+                                    Object.keys(json.data).forEach(function (led) {
+                                        var stat = json.data[led].status;
+                                        var b = (stat === 'blinking' || stat === 'stop') ? ledbuttons[led].blink : ledbuttons[led].switch;
+                                        b.style.background = (stat !== 'off') ? (stat !== 'on') ? (stat === 'stop') ? '#1abc9c' : '#16a085' : '#2ecc71' : '#27ae60';
+                                        b.innerText = (stat !== 'stop') ? (stat !== 'blinking') ? (stat === 'on') ? 'off' : 'on' : 'stop' : 'blink';
+                                     });
+                                 } else if (json.type === 'buttons') {
+                                    if (buttonpresses.sT) {
+                                        clearTimeout(buttonpresses.sT);
+                                    }
+                                    Object.keys(json.data).forEach(function (button) {
+                                        clickButtons[button].innerText = json.data[button].clicks;
+                                        buttonpresses.innerText = button + ' was pressed!';
+                                        buttonpresses.style.opacity = 1;
+                                        buttonpresses.sT = setTimeout(function () {
+                                            buttonpresses.style.opacity = 0;
+                                        }, 5000);
+                                    })
+                                 }
+                            }
+                        };
+                    },
+                    send: function (data) {
+                        this.connection.send(data);
+                    },
+                    close: function () {
+                        this.connection.close();
+                    }
+                });
+                webSocketConnection.init();
+
+            }(document, window));
+        </script>
+    </body>
+</html>

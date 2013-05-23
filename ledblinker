@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+'use strict';
+
+/*****************************************************************************/
+/*                    Led Blinker for the raspberry pi                       */
+/*                              by: ok 2013                                  */
+/*                                                                           */
+/*             Set your pin configs at config.json before running.           */
+/*                 If you break something, it's your own fault.              */
+/*                                                                           */
+/*                          This software is free.                           */
+/*                                                                           */
+/*****************************************************************************/
+
+// some module deps and main vars
+var Gpio = require('onoff').Gpio;
+var config = require('./config');
+var http = require('http');
+var isValidJson = require('validjson');
+var connect = require('connect');
+var app = connect();
+var server = http.createServer(app).listen(config.port);
+var ledsO = {};
+var ledsA = [];
+var buttonA = [];
+var buttonO = {};
+var ledN = [];
+
+// set up the objects for leds and buttons based on the config
+(function setLeds() {
+    var i = 0;
+    Object.keys(config.leds).forEach(function (ledc) {
+        ledsA[i] = new Gpio(config.leds[ledc].pin, 'out');
+        ledsO[ledc] = { index: i, status: 'off' };
+        i += 1;
+        ledN[i] = ledc;
+    });
+    var j = 0;
+    Object.keys(config.buttons).forEach(function (button) {
+        var pushButton = new Gpio(config.buttons[button].pin, 'in', 'falling', { persistentWatch: true, debounceTimeout: 400 });
+        buttonA[j] = pushButton;
+        buttonO[button] = { index : j, clicks: 0 };
+        pushButton.watch(function (err, value) {
+            if (err) {
+                throw err;
+            } else {
+                buttonO[button].clicks += 1;
+                wss.emit('sendAll', JSON.stringify({ type: 'buttons', data: buttonO }));
+                ledN.forEach(function (led) {
+                    leds.stopBlinking(led);
+                });
+            }
+        });
+        j += 1;
+    });
+}());
+
+// set up the http-server
+app.use(connect.static(__dirname + '/public'));
+app.use(function (req, res) {
+    res.statusCode = 418;
+    res.end('no coffee...');
+});
+
+// set up the websocket server
+var WebSocketServer = require('websocket').server;
+var connIds = [];
+var wss = new WebSocketServer({ httpServer: server });
+wss.clientConnections = {};
+
+// websocket server eventlisteners and callbacks
+wss.on('request', function (request) {
+    var connection = request.accept(null, request.remoteAddress);
+    var cid = request.key;
+    var self = this;
+    connection.id = cid;
+    this.clientConnections[cid] = setConnectionListeners(connection);
+    connIds.push(cid);
+    connection.send(JSON.stringify({ type: 'leds', data: ledsO }));
+    connection.send(JSON.stringify({ type: 'buttons', data: buttonO }));
+})
+.on('sendAll', function (message) {
+    var self = this;
+    connIds.forEach(function (id) {
+        var conn = self.clientConnections[id];
+        if (conn.connected) {
+            conn.send(message);
+        }
+    });
+});
+
+// just a helper for sending status to all clients
+function sendLedStatus() {
+    wss.emit('sendAll', JSON.stringify({type:'leds', data: ledsO }));
+}
+
+// the connection eventlisteners and callbacks
+function setConnectionListeners(connection) {
+    connection.on('message', function (msg) {
+        if (msg.type === 'utf8') {
+            var message = msg.utf8Data;
+            var obj = isValidJson(message);
+            if (obj && ledsO.hasOwnProperty(obj.led)) {
+                var ledname = obj.led;
+                var ledObj = ledsO[ledname];
+                if (obj.on && obj.off) {
+                    obj.count = obj.count * 2;
+                    leds.blink(obj);
+                } else if (obj.stop) {
+                    leds.stopBlinking(ledname);
+                } else if (obj.hasOwnProperty('value')) {
+                    leds.switchLed(ledsA[ledObj.index], function (value) {
+                        var stat = (obj.value === 1) ? 'on' : 'off';
+                        ledObj.value = obj.value;
+                        ledObj.status = stat;
+                        sendLedStatus();
+                    });
+                }
+            } else {
+                console.log(message);
+            }
+        }
+    })
+    .on('error', function (error) {
+        connection.close();
+    })
+    .on('close', function () {
+        delete wss.clientConnections[connection.id];
+        connIds = Object.keys(wss.clientConnections);
+    });
+    return connection;
+}
+
+
+// the object that holds the methods for blinking and switching the leds
+var leds = {
+    timeO: [],
+    switchLed: function (led, cb) {
+        led.read(function (err, value) {
+            if (err) {
+                throw err;
+            } else {
+                var val = value === 0 ? 1 : 0;
+                led.write(val, function (err) {
+                    if (err) {
+                        throw err;
+                    } else {
+                        cb(val);
+                    }
+               });
+            }
+        });
+    },
+    blink: function(options) {
+        var indx = ledsO[options.led].index;
+        var led = ledsA[indx];
+        var self = this;
+        led.blinking = true;
+        ledsO[options.led].status = 'blinking';
+        sendLedStatus();
+        (function timeouts(indx, options, led) {
+            if (led.blinking) {
+                var onT = options.on;
+                var offT = options.off;
+                if (options.count <= 0) {
+                    return self.stopBlinking(options.led);
+                }
+                options.count -= 1;
+                self.switchLed(led, function (value) {
+                    var to = (value === 1) ? onT : offT;
+                    self.timeO[indx] = setTimeout(function() {
+                        timeouts(indx, options, led);
+                    }, to);
+                });
+            }
+        }(indx, options, led));
+    },
+    stopBlinking: function (name) {
+        var ind = ledsO[name].index;
+        var val = ledsO[name].value;
+        ledsO[name].status = 'stop';
+        clearTimeout(this.timeO[ind]);
+        var led = ledsA[ind];
+        if (led.blinking) {
+            led.writeSync(val);
+            led.blinking = false;
+        }
+        sendLedStatus();
+    }
+};
+
+// init the leds by turning them off
+ledN.forEach(function (ledi) {
+    var indx = ledsO[ledi].index;
+    var led = ledsA[indx];
+    led.blinking = true;
+    leds.stopBlinking(ledi);
+});
+
+console.log(' -= LED-Blinker || ok 2013 =-');
+
+// this releases the pins after exit
+process.on('exit', function() {
+    console.log(' Exiting...');
+    ledsA.forEach(function (led) {
+        led.unexport();
+    });
+    buttonA.forEach(function (button) {
+        button.unexport();
+    });
+});
