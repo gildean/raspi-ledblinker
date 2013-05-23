@@ -22,37 +22,41 @@ var app = connect();
 var server = http.createServer(app).listen(config.port);
 var ledsO = {};
 var ledsA = [];
-var buttonA = [];
 var buttonO = {};
+var buttonA = [];
 var ledN = [];
 
 // set up the objects for leds and buttons based on the config
 (function setLeds() {
-    var i = 0;
-    Object.keys(config.leds).forEach(function (ledc) {
-        ledsA[i] = new Gpio(config.leds[ledc].pin, 'out');
-        ledsO[ledc] = { index: i, status: 'off' };
-        i += 1;
-        ledN[i] = ledc;
-    });
-    var j = 0;
-    Object.keys(config.buttons).forEach(function (button) {
-        var pushButton = new Gpio(config.buttons[button].pin, 'in', 'falling', { persistentWatch: true, debounceTimeout: 400 });
-        buttonA[j] = pushButton;
-        buttonO[button] = { index : j, clicks: 0 };
-        pushButton.watch(function (err, value) {
-            if (err) {
-                throw err;
-            } else {
-                buttonO[button].clicks += 1;
-                wss.emit('sendAll', JSON.stringify({ type: 'buttons', data: buttonO }));
-                ledN.forEach(function (led) {
-                    leds.stopBlinking(led);
-                });
-            }
+    if (config.leds) {
+        var i = 0;
+        Object.keys(config.leds).forEach(function (ledc) {
+            ledsA[i] = new Gpio(config.leds[ledc].pin, 'out');
+            ledsO[ledc] = { index: i, status: 'off' };
+            i += 1;
+            ledN[i] = ledc;
         });
-        j += 1;
-    });
+    }
+    if (config.buttons) {
+        var j = 0;
+        Object.keys(config.buttons).forEach(function (button) {
+            var pushButton = new Gpio(config.buttons[button].pin, 'in', 'falling', { persistentWatch: true, debounceTimeout: 400 });
+            buttonA[j] = pushButton;
+            buttonO[button] = { index : j, clicks: 0 };
+            pushButton.watch(function (err, value) {
+                if (err) {
+                    throw err;
+                } else {
+                    buttonO[button].clicks += 1;
+                    wss.emit('sendAll', JSON.stringify({ type: 'buttons', data: buttonO }));
+                    ledN.forEach(function (led) {
+                        leds.stopBlinking(led);
+                    });
+                }
+            });
+            j += 1;
+        });
+    }
 }());
 
 // set up the http-server
