@@ -1,0 +1,24 @@
+{
+  "name": "ledblinker",
+  "version": "0.0.1",
+  "description": "Blink some leds and push some buttons on a raspi",
+  "main": "ledblinker",
+  "dependencies": {
+    "connect": "~2.7.10",
+    "onoff": "~0.1.3",
+    "websocket": "~1.0.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gildean/raspi-ledblinker.git"
+  },
+  "keywords": [
+    "raspi",
+    "led",
+    "button",
+    "gpio"
+  ],
+  "author": "Olli K.",
+  "license": "BSD",
+  "readmeFilename": "README.md"
+}
