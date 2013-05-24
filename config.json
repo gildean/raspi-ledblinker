@@ -1,5 +1,5 @@
 {
-    "notice": "pin numbers are the gpio numbers, not by the location on the header",
+    "notice": "Pin numbers are by the gpio numbers, not by the location on the header. The leds are set as outputs and the buttons as inputs",
     "port": 40000,
     "leds": {
         "led1": {
@@ -14,7 +14,9 @@
     },
     "buttons":  {
         "button1": {
-            "pin":17
+            "pin": 17,
+            "edge": "both",
+            "debounce": 300
         }
     }
 }

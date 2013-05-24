@@ -16,15 +16,29 @@
 var Gpio = require('onoff').Gpio;
 var config = require('./config');
 var http = require('http');
+var fs = require('fs');
+var zlib = require('zlib')
 var isValidJson = require('validjson');
-var connect = require('connect');
-var app = connect();
-var server = http.createServer(app).listen(config.port);
+var filePath = './public/index.html';
+var htmlFile = fs.readFileSync(filePath).toString('utf8');
+var fileStats = fs.statSync(filePath);
+var route = {
+    file: htmlFile
+};
+var headers = {
+    'Content-Type': 'text/html',
+    'Cache-Control': 'public, max-age=31536000',
+    'X-Powered-By':'raspberry Pi',
+    'Last-Modified': fileStats.mtime,
+    'Expires': 'Wed, 01 Jan 2020 16:20:00 GMT',
+    'ETag': fileStats.size + '-' + Date.parse(fileStats.mtime)
+};
+var server = http.createServer(app);
 var ledsO = {};
 var ledsA = [];
 var buttonO = {};
 var buttonA = [];
-var ledN = [];
+var gi = 0;
 
 // set up the objects for leds and buttons based on the config
 (function setLeds() {
@@ -32,26 +46,26 @@ var ledN = [];
         var i = 0;
         Object.keys(config.leds).forEach(function (ledc) {
             ledsA[i] = new Gpio(config.leds[ledc].pin, 'out');
-            ledsO[ledc] = { index: i, status: 'off' };
-            ledN[i] = ledc;
+            ledsA[i].writeSync(0);
+            ledsO[ledc] = { index: i, status: 'off', value: 0 };
             i += 1;
         });
     }
     if (config.buttons) {
         var j = 0;
         Object.keys(config.buttons).forEach(function (button) {
-            var pushButton = new Gpio(config.buttons[button].pin, 'in', 'falling', { persistentWatch: true, debounceTimeout: 400 });
-            buttonA[j] = pushButton;
+            var but = config.buttons[button];
+            var pin = but.pin;
+            var edge = but.edge || 'both';
+            var debounce = but.debounce || 200;
+            buttonA[j] = new Gpio(pin, 'in', edge, { persistentWatch: true, debounceTimeout: debounce });;
             buttonO[button] = { index : j, clicks: 0 };
-            pushButton.watch(function (err, value) {
+            buttonA[j].watch(function (err, value) {
                 if (err) {
                     throw err;
                 } else {
                     buttonO[button].clicks += 1;
                     wss.emit('sendAll', JSON.stringify({ type: 'buttons', data: buttonO }));
-                    ledN.forEach(function (led) {
-                        leds.stopBlinking(led);
-                    });
                 }
             });
             j += 1;
@@ -59,12 +73,41 @@ var ledN = [];
     }
 }());
 
-// set up the http-server
-app.use(connect.static(__dirname + '/public'));
-app.use(function (req, res) {
-    res.statusCode = 418;
-    res.end('no coffee...');
+// setup the in-memory http-server with both gzipped and deflated files
+// after this is done, we can start listening on the server
+['gzip', 'deflate'].forEach(function (gz) {
+    zlib[gz](htmlFile, function (err, gzipped) {
+        if (!err) {
+            route[gz] = gzipped;
+        }
+        if (gi === 1) {
+            server.listen(config.port);
+        } else {
+            gi += 1;
+        }
+    });
 });
+
+// this is the connectionhandler for the http-server
+function app(req, res) {
+    var reqHeaders = req.headers;
+    if (reqHeaders['if-none-match'] === headers['ETag']) {
+        res.statusCode = 304;
+        return res.end();
+    }
+    var resHeaders = headers;
+    var acceptEncoding = reqHeaders['accept-encoding'];
+    if (acceptEncoding) {
+        var gzipd = acceptEncoding.match(/\bgzip|deflate\b/);
+        if (gzipd) {
+            resHeaders['content-encoding'] = gzipd[0];
+            res.writeHead(200, resHeaders);
+            return res.end(route[gzipd[0]]);
+        }
+    }
+    res.writeHead(200, resHeaders);
+    return res.end(route.file);
+}
 
 // set up the websocket server
 var WebSocketServer = require('websocket').server;
@@ -98,21 +141,21 @@ function sendLedStatus() {
     wss.emit('sendAll', JSON.stringify({type:'leds', data: ledsO }));
 }
 
-// the connection eventlisteners and callbacks
+// a function to set websocket connection eventlisteners and callbacks
 function setConnectionListeners(connection) {
     connection.on('message', function (msg) {
         if (msg.type === 'utf8') {
             var message = msg.utf8Data;
             var obj = isValidJson(message);
-            if (obj && ledsO.hasOwnProperty(obj.led)) {
+            if (obj && obj.led && ledsO.hasOwnProperty(obj.led)) {
                 var ledname = obj.led;
                 var ledObj = ledsO[ledname];
-                if (obj.on && obj.off) {
+                if (obj.on && obj.off && obj.count && obj.count > 0 && obj.count < 1000000 && obj.on > 0 && obj.on < 1000000 && obj.off > 0 && obj.off < 1000000) {
                     obj.count = obj.count * 2;
                     leds.blink(obj);
                 } else if (obj.stop) {
                     leds.stopBlinking(ledname);
-                } else if (obj.hasOwnProperty('value')) {
+                } else if (obj.hasOwnProperty('value') && obj.value === 1 || obj.value === 0) {
                     leds.switchLed(ledsA[ledObj.index], function (value) {
                         var stat = (obj.value === 1) ? 'on' : 'off';
                         ledObj.value = obj.value;
@@ -121,8 +164,10 @@ function setConnectionListeners(connection) {
                     });
                 }
             } else {
-                console.log(message);
+                connection.close();
             }
+        } else {
+            connection.close();
         }
     })
     .on('error', function (error) {
@@ -193,16 +238,6 @@ var leds = {
     }
 };
 
-// init the leds by turning them off
-ledN.forEach(function (ledi) {
-    var indx = ledsO[ledi].index;
-    var led = ledsA[indx];
-    led.blinking = true;
-    leds.stopBlinking(ledi);
-});
-
-console.log(' -= LED-Blinker || ok 2013 =-');
-
 // this releases the pins after exit
 process.on('exit', function() {
     console.log(' Exiting...');
@@ -213,3 +248,6 @@ process.on('exit', function() {
         button.unexport();
     });
 });
+
+// print something to the console
+console.log(' -= LED-Blinker || ok 2013 =-');
