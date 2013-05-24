@@ -33,8 +33,8 @@ var ledN = [];
         Object.keys(config.leds).forEach(function (ledc) {
             ledsA[i] = new Gpio(config.leds[ledc].pin, 'out');
             ledsO[ledc] = { index: i, status: 'off' };
-            i += 1;
             ledN[i] = ledc;
+            i += 1;
         });
     }
     if (config.buttons) {
