@@ -15,8 +15,9 @@
             label { width: 15%; font-size: 120%; padding: 0 0 0 1% }
             #status { position: absolute; bottom: 0.2em; right: 0.4em; color: #aaa; font-size: 0.9em }
             .ledheader { display: inline-block; width: 10%; font-weight: 300 }
-            .clicks { word-spacing: 0.4em ;position: absolute; top: 1.5em; right: 0.5em; font-size: 2em; color: #aaa }
-            #buttonpresses { position: absolute; top: 0.2em; right: 0.5em; height: 1.2em; font-size: 1.2em; transition: opacity 0.5s ease-in-out; display: block; }
+            .clicks { word-spacing: 0.4em ; position: absolute; top: 0.2em; right: 0.5em; font-size: 2em; color: #aaa; }
+            .clicker { transition: all 0.4s ease-in-out; }
+            .nclicks { color: #aaa }
             .buttonpress { color: #34495e; letter-spacing: 0.1em }
             .desc { display: inline-block; width: 19%; text-align: center; }
             .desc:first-of-type { margin: 0 1% 0 0 }
@@ -35,7 +36,6 @@
             <p class="dline"><span class="desc">on<small> (ms)</small></span><span class="desc">off<small> (ms)</small></span></p>
         </div>
         <span id="status"></span>
-        <span id="buttonpresses"></span>
         <div id="clicks" class="clicks">
         </div>
         <script>
@@ -76,7 +76,9 @@
                         var counter = addElement(clicks, 'span', 'clicker', button + 'click', button + ': ');
                         var numb = addElement(counter, 'span', 'buttonpress', button, data[button].clicks);
                         addElement(counter, 'small', 'nclicks', button + 'number', ' clicks');
-                        clickButtons[button] = numb;
+                        clickButtons[button] = {};
+                        clickButtons[button].counter = numb;
+                        clickButtons[button].clicks = counter;
                     });
                 }
 
@@ -166,16 +168,16 @@
                                         b.innerText = (stat !== 'stop') ? (stat !== 'blinking') ? (stat === 'on') ? 'off' : 'on' : 'stop' : 'blink';
                                      });
                                  } else if (json.type === 'buttons') {
-                                    if (buttonpresses.sT) {
-                                        clearTimeout(buttonpresses.sT);
-                                    }
                                     Object.keys(json.data).forEach(function (button) {
-                                        clickButtons[button].innerText = json.data[button].clicks;
-                                        buttonpresses.innerText = button + ' was pressed!';
-                                        buttonpresses.style.opacity = 1;
-                                        buttonpresses.sT = setTimeout(function () {
-                                            buttonpresses.style.opacity = 0;
-                                        }, 5000);
+                                        var but = clickButtons[button];
+                                        if (but.sT) {
+                                            clearTimeout(but.sT);
+                                        }
+                                        but.counter.innerText = json.data[button].clicks;
+                                        but.clicks.style.color = '#e74c3c';
+                                        but.sT = setTimeout(function () {
+                                            but.clicks.style.color = '#aaa';
+                                        }, 2000);
                                     })
                                  }
                             }
