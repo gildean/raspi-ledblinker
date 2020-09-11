@@ -31,6 +31,6 @@ Correct values for the edge are:
 
 The value for the debouncer is set in milliseconds.
 
-license
+license, prova
 -------
 BSD
